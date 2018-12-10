@@ -6,51 +6,68 @@
 //  Copyright © 2018年 kupay. All rights reserved.
 //
 
-#import "JSBundle.h"
+
 #import "WebViewController.h"
-#import "BaseObject.h"
 #import "JSIntercept.h"
-#import "ShareToPlatforms.h"
+#import "BaseObject.h"
+#import "ynWebViewController.h"
 
 @interface WebViewController () <WKUIDelegate, WKNavigationDelegate, WKScriptMessageHandler>
+
+@property (nonatomic, strong)NSTimer *timer;
+@property (nonatomic, strong)YNWebView *ynWebView;
+@property (nonatomic, strong)JSIntercept *intercept;
 
 @end
 
 @implementation WebViewController
 
-static WKWebView *wkWebView = nil;
+WKWebView *h5WebView = nil;
 
-+ (WKWebView *)getWebView {
-    return wkWebView;
++ (instancetype)sharedInstence{
+    static WebViewController *singleton = nil;
+    static dispatch_once_t onceToken;
+    // dispatch_once  无论使用多线程还是单线程，都只执行一次
+    dispatch_once(&onceToken, ^{
+        singleton = [[WebViewController alloc] init];
+    });
+    return singleton;
+}
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        _ynWebView = [[YNWebView alloc] initWithWKWebView:[self createWebview] webName:@"default"];
+        _intercept = [[JSIntercept alloc] initWithWebView:[_ynWebView getWKWebView]];
+    }
+    return self;
+}
+
+- (void)viewWillAppear:(BOOL)animated{
+    [super viewWillAppear:animated];
+    if (!self.timer) {
+        [self.timer invalidate];
+        self.timer = nil;
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated{
+    [super viewWillDisappear:animated];
+    self.timer = [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(keepWKWebViewActive:) userInfo:nil repeats:YES];
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    wkWebView = [self createWebview];
-    [BaseObject setVc:self];
-//    [self addTestButton];
 }
 
-UIButton *mBtnTest;
-
-- (void)addTestButton {
-    mBtnTest = [UIButton buttonWithType:UIButtonTypeRoundedRect]; //绘制形状
-    CGRect frame;
-    frame.size.width = self.view.bounds.size.width;
-    frame.size.height = 50;
-    frame.origin.x = 0;
-    frame.origin.y = self.view.bounds.size.height - 50;
-    [mBtnTest setFrame:frame];
-    mBtnTest.tag = 10;
-    [mBtnTest setTitle:@"点击这个测试" forState:UIControlStateNormal];
-    [mBtnTest addTarget:self action:@selector(btnPressed:) forControlEvents:UIControlEventTouchUpInside];
-    [mBtnTest setBackgroundColor:UIColor.whiteColor];
-    [self.view addSubview:mBtnTest];
+- (void)keepWKWebViewActive:(NSTimer*) timer{
+    NSLog(@"1");
+    [[_ynWebView getWKWebView] evaluateJavaScript:@"1+1" completionHandler:^(id object,NSError *error) {
+        
+    }];
 }
 
-- (void)btnPressed:(id)sender {
-    [[[ShareToPlatforms alloc] init] getScreenShot:@[@125]];
-}
 
 - (void)didReceiveMemoryWarning {
     [super didReceiveMemoryWarning];
@@ -69,6 +86,13 @@ UIButton *mBtnTest;
     config.preferences.javaScriptCanOpenWindowsAutomatically = NO;
     // 创建UserContentController（提供JavaScript向webView发送消息的方法）
     config.userContentController = [[WKUserContentController alloc] init];
+    //[config.preferences setValue:@TRUE forKey:@"modernMediaControlsEnabled"];
+    //该方法使浏览器支持播放aac音频，但只在ios11以上版本可以使用
+    //ios10及以下版本，只支持播放mp3格式
+
+    //[config.preferences setValue:@TRUE forKey:@"mediaDevicesEnabled"];
+    //支持文件协议跨域
+    [config.preferences setValue:@TRUE forKey:@"allowFileAccessFromFileURLs"];
     // 添加消息处理，注意：self指代的对象需要遵守WKScriptMessageHandler协议，结束时需要移除
     [config.userContentController addScriptMessageHandler:self name:@"Native"];
     [config.userContentController addScriptMessageHandler:self name:@"JSIntercept"];
@@ -80,13 +104,79 @@ UIButton *mBtnTest;
     // 确定宽、高、X、Y坐标
     [webview setFrame:CGRectMake(0, -20, self.view.bounds.size.width, self.view.bounds.size.height + 20)];
     [self.view addSubview:webview];
-    NSURLRequest *request = [[NSURLRequest alloc] initWithURL:[NSURL URLWithString:URL_PATH]];
-    [webview loadRequest:request];
-    // 关闭webView的拖动
-//    webview.scrollView.scrollEnabled = NO;
+    NSString *str = [URL_PATH substringToIndex:1];
+    if ([str isEqualToString:@"/"]) {
+        NSString *docPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
+        NSLog(@"%@",docPath);
+        NSString *path = [docPath stringByAppendingString:@"/assets"];
+        NSString *fullPath = [path stringByAppendingString:URL_PATH];
+        NSFileHandle *file = [NSFileHandle fileHandleForReadingAtPath:fullPath];
+        NSData *data = nil;
+        if (file != nil) {
+            data = [file readDataToEndOfFile];
+            [file closeFile];
+        }
+        if (data == nil) {
+            path = [@"assets" stringByAppendingString:URL_PATH];
+            fullPath = [[NSBundle mainBundle] pathForResource:path ofType:nil];
+            file = [NSFileHandle fileHandleForReadingAtPath:fullPath];
+            if (file != nil) {
+                NSLog(@"file is read, %@", path);
+                data = [file readDataToEndOfFile];
+                [file closeFile];
+            } else {
+                NSLog(@"file isn't found: %@", path);
+            }
+        }
+        path = [@"assets" stringByAppendingString:URL_PATH];
+        fullPath = [[NSBundle mainBundle] pathForResource:path ofType:nil];
+        NSString *utf = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        NSString *url = [@"file://" stringByAppendingString:fullPath];
+        [webview loadHTMLString:utf baseURL:[NSURL URLWithString:url]];
+    }else{
+        NSMutableURLRequest *request = [[NSMutableURLRequest alloc] initWithURL:[NSURL URLWithString:URL_PATH]];
+        [webview loadRequest:request];
+    }
+    
     webview.UIDelegate = self;
     webview.navigationDelegate = self;
     return webview;
+}
+
+//支付请求拦截
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler{
+    NSString *urlStr = navigationAction.request.URL.absoluteString;
+    if ([urlStr containsString:@"alipay://"] || [urlStr containsString:@"alipays://"]  || [urlStr containsString:@"weixin://"] ) {
+        NSMutableString *newUrlStr = [[NSMutableString alloc]initWithString:urlStr];
+        if([urlStr containsString:@"fromAppUrlScheme"] || [urlStr containsString:@"alipays"] ){
+            NSRange range = [newUrlStr rangeOfString:@"alipays"];
+            [newUrlStr replaceCharactersInRange:range withString:@"app.herominer.net"];
+        }
+        [[UIApplication sharedApplication] openURL:[NSURL URLWithString:newUrlStr]];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    else if ([urlStr containsString:@"https://wx.tenpay.com/cgi-bin/mmpayweb-bin/checkmweb?"] && ![urlStr containsString:@"redirect_url"] ){
+        NSString *newURLStr = [urlStr stringByAppendingString:@"&redirect_url=app.herominer.net://"];
+        NSMutableURLRequest *newRequest = [[NSMutableURLRequest alloc] initWithURL:[NSURL URLWithString:newURLStr]];
+        newRequest.allHTTPHeaderFields = navigationAction.request.allHTTPHeaderFields;
+        //TODO: 对newURLStr追加或修改参数redirect_url=URLEncode(A.company.com://)
+        [newRequest setValue:@"app.herominer.net" forHTTPHeaderField:@"Referer"];
+        h5WebView = [[WKWebView alloc] initWithFrame:CGRectMake(0, 0, 1, 1)];
+        [self.view addSubview:h5WebView];
+        [h5WebView loadRequest:newRequest];
+        h5WebView.UIDelegate = self;
+        h5WebView.navigationDelegate = self;
+        //[[UIApplication sharedApplication] openURL:newRequest.URL];
+        decisionHandler(WKNavigationActionPolicyCancel);
+    }else if([urlStr isEqualToString:@"app.herominer.net://"]){
+        [h5WebView removeFromSuperview];
+        h5WebView = nil;
+        decisionHandler(WKNavigationActionPolicyCancel);
+    }
+    else{
+        decisionHandler(WKNavigationActionPolicyAllow);
+    }
 }
 
 - (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler {
@@ -114,13 +204,21 @@ UIButton *mBtnTest;
 // 消息分发
 - (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
     // 判断是否是调用原生的
+    NSLog(@"%@ %@",message.name,message.body);
     if ([message.name isEqualToString:@"Native"]) {
-        [JSBundle sendMessage:message.body];
+        [[_ynWebView getJSBundel] sendMessage:message.body];
     } else if ([message.name isEqualToString:@"JSIntercept"]) {
         NSArray *params = message.body;
-        [JSIntercept safeFile:params[0] content:params[1] saveID:params[2]];
+        if ([params[0] isEqualToString:@"saveFile"]) {
+            [self.intercept saveFile:params[1] content:params[2] listenID:params[3]];
+        }else if([params[0] isEqualToString:@"getBootFiles"]){
+            [self.intercept getBootFiles:params[1]];
+        }else if([params[0] isEqualToString:@"restartApp"]){
+            [self.intercept restartApp];
+        }
+        //[JSIntercept safeFile:params[0] content:params[1] saveID:params[2] webView:[_ynWebView getWKWebView]];
     } else {
-        [JSBundle callJSError:@"None" funcName:@"None" msg:@"'Not Native Message Call'"];
+        [[_ynWebView getJSBundel] callJSError:@"None" funcName:@"None" msg:@"'Not Native Message Call'"];
     }
 }
 

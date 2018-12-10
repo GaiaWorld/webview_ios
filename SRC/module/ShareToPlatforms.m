@@ -17,15 +17,16 @@ const static int SHARE_TYPE_IAMGE = 1;//分享的类型图片
 const static int SHARE_TYPE_TEXT = 2;//分享的类型文本
 
 @implementation ShareToPlatforms
-
+JSBundle *bundel;
 - (void)shareLink:(NSArray *)array {
     NSNumber *callbackId = array[0];
-    NSString *webName = array[1];
+    //NSString *webName = array[1];
     NSString *url = array[2];
     NSString *title = array[3];
     NSString *content = array[4];
-    NSString *comment = array[5];
+    //NSString *comment = array[5];
     int platform = [array[6] intValue];
+    bundel = array[7];
     NSMutableDictionary *shareParams = [NSMutableDictionary dictionary];
     [shareParams SSDKSetupShareParamsByText:content
                                      images:[[NSBundle mainBundle] pathForResource:@"icon" ofType:@"png"]
@@ -71,16 +72,17 @@ const static int SHARE_TYPE_TEXT = 2;//分享的类型文本
         switch (state) {
             //分享成功
             case SSDKResponseStateSuccess:
-                [JSBundle callJS:callbackId code:Success params:@[@"分享成功"]];
+                NSLog(@"分享成功");
+                [bundel callJS:callbackId code:Success params:@[@"分享成功"]];
                 break;
                 //分享失败
             case SSDKResponseStateFail:
                 NSLog(@"%@", error);
-                [JSBundle callJS:callbackId code:Fail params:@[@"分享失败"]];
+                [bundel callJS:callbackId code:Fail params:@[@"分享失败"]];
                 break;
                 //分享取消
             case SSDKResponseStateCancel:
-                [JSBundle callJS:callbackId code:Fail params:@[@"分享取消"]];
+                [bundel callJS:callbackId code:Fail params:@[@"分享取消"]];
                 break;
             default:
                 break;
@@ -98,12 +100,12 @@ const static int SHARE_TYPE_TEXT = 2;//分享的类型文本
                onShareStateChanged:^(SSDKResponseState state, SSDKPlatformType platformType, NSDictionary *userData, SSDKContentEntity *contentEntity, NSError *error, BOOL end) {
                    switch (state) {
                        case SSDKResponseStateSuccess: {
-                           [JSBundle callJS:callbackId code:Success params:@[@"success"]];
+                           [bundel callJS:callbackId code:Success params:@[@"success"]];
                            break;
                        }
                        case SSDKResponseStateFail: {
                            NSLog(@"%@", error);
-                           [JSBundle callJS:callbackId code:Fail params:@[@"failed"]];
+                           [bundel callJS:callbackId code:Fail params:@[@"failed"]];
                            break;
                        }
                        default:
@@ -121,6 +123,7 @@ const static int SHARE_TYPE_TEXT = 2;//分享的类型文本
     NSString *content = array[1];//要分享的内容
     int shareType = [array[2] intValue];//用于判断分享的类型(1 是图片  2是文本)
     int platform = [array[3] intValue];//要分享到的平台
+    bundel = array[4];
     NSMutableDictionary *shareParams = [NSMutableDictionary dictionary];
     if (SHARE_TYPE_IAMGE == shareType) {
         //分享图片
@@ -160,20 +163,23 @@ const static int SHARE_TYPE_TEXT = 2;//分享的类型文本
 
 - (void)getScreenShot:(NSArray *)array {
     NSNumber *callbackId = array[0];
+    bundel = array[1];
+    
     UIGraphicsBeginImageContextWithOptions([BaseObject getVc].view.bounds.size, YES, 0);
     [[BaseObject getVc].view drawViewHierarchyInRect:[BaseObject getVc].view.bounds afterScreenUpdates:YES];
     UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
     BOOL success = [ImageUtils saveImageIntoBox:image :@"share_screen_image.png"];
     if (success) {
-        [JSBundle callJS:callbackId code:Success params:@[@""]];
+        [bundel callJS:callbackId code:Success params:@[@""]];
     } else {
-        [JSBundle callJS:callbackId code:Fail params:@[@""]];
+        [bundel callJS:callbackId code:Fail params:@[@""]];
     }
 }
 
 - (void)shareScreen:(NSArray *)array {
     NSNumber *callbackId = array[0];
     int platform = [array[1] intValue];
+    bundel = array[2];
     NSMutableDictionary *shareParams = [NSMutableDictionary dictionary];
     UIImage *image = [ImageUtils getDocumentImage:@"share_screen_image.png"];
     [shareParams SSDKSetupShareParamsByText:@""
