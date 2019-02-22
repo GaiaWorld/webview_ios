@@ -10,6 +10,14 @@
 #import <sys/utsname.h>
 #import "BaseObject.h"
 
+typedef void (^CallJS)(CallJSType callJSType, NSArray *params);
+
 @interface DeviceIdProvider : BaseObject
-- (void)getUUId:(NSArray *)array;
+
+- (void)getUUId:(CallJS)callJS;
+- (void)getSystem:(CallJS)callJS;
+- (void)getMemSize:(CallJS)callJS;
+- (void)getNetWorkStatus:(CallJS)callJS;
+- (void)getOperatorName:(CallJS)callJS;
+
 @end
